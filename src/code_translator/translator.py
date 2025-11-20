@@ -11,7 +11,7 @@ class TranslationConfig:
     model: str = "qwen2.5:1.5b"
     source_lang: str = "Chinese"
     target_lang: str = "English"
-    temperature: float = 0.3  # Lower = more deterministic
+    temperature: float = 0.3  # 0.3 provides a good balance between consistency and translation quality for translation tasks. Lower values make output more deterministic; higher values increase creativity but may reduce accuracy.
 
 
 class LocalTranslator:
