@@ -1,14 +1,9 @@
 """Configuration management."""
 
-import sys
+import tomllib  # Python 3.11+ standard library
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 
 @dataclass
@@ -92,20 +87,31 @@ class Config:
         return cls()
 
     def merge_with_args(self, **kwargs) -> 'Config':
-        """Merge config with command-line arguments, preferring CLI args."""
-        config_dict = {
+        """
+        Create a new Config with command-line arguments merged in.
+
+        This is a pure function that returns a new Config object without
+        modifying the original. CLI arguments take precedence over config file values.
+
+        Returns:
+            New Config object with merged values
+        """
+        # Start with a copy of current config values
+        merged_values = {
             'model': kwargs.get('model') or self.model,
             'source_lang': kwargs.get('source_lang') or self.source_lang,
             'target_lang': kwargs.get('target_lang') or self.target_lang,
+            'temperature': self.temperature,
             'translate_all': kwargs.get('translate_all', self.translate_all),
             'dry_run': kwargs.get('dry_run', self.dry_run),
             'max_workers': kwargs.get('workers') or self.max_workers,
             'recursive': kwargs.get('recursive', self.recursive),
+            'skip_dirs': self.skip_dirs,
+            'skip_extensions': self.skip_extensions,
+            'file_patterns': self.file_patterns,
+            'auto_create_branch': self.auto_create_branch,
+            'branch_prefix': self.branch_prefix,
         }
 
-        # Update current config
-        for key, value in config_dict.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-
-        return self
+        # Create and return new Config object
+        return Config(**merged_values)

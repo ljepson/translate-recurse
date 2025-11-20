@@ -9,13 +9,13 @@ Translate Chinese (or other foreign language) comments, docstrings, and optional
 - **100% Local** - No API costs, no rate limits, works offline
 - **Fast** - Optimized for speed with small models (<3B params) and parallel processing
 - **Safe** - Comments/docstrings only by default, won't break your code
-- **Smart** - Syntax-aware parsing for Python, JavaScript, Java, Go, Rust, C/C++
+- **Smart** - Regex-based parsing for Python, JavaScript, Java, Go, Rust, C/C++
 - **Flexible** - CLI flags, config files, dry-run mode
 
 ## Features
 
 ✓ Translate comments and docstrings while preserving code functionality
-✓ Syntax-aware parsing for multiple languages
+✓ Regex-based parsing for multiple languages (Python, JS, Java, Go, Rust, C/C++)
 ✓ Parallel processing for speed
 ✓ Dry-run mode to preview changes
 ✓ Optional aggressive mode (translate strings and identifiers - use with caution!)

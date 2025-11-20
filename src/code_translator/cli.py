@@ -107,7 +107,7 @@ def main(
     dry_run: bool,
     workers: int,
     recursive: bool,
-    config: Path | None,
+    config: Optional[Path],
     list_models: bool,
 ):
     """

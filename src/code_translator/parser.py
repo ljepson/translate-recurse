@@ -85,8 +85,24 @@ class CodeParser:
 
     @staticmethod
     def contains_non_ascii(text: str) -> bool:
-        """Check if text contains non-ASCII characters (Chinese, etc.)."""
-        return any(ord(char) > 127 for char in text)
+        """
+        Check if text contains CJK (Chinese, Japanese, Korean) characters.
+
+        This specifically targets CJK Unified Ideographs range (U+4E00 to U+9FFF)
+        which covers most Chinese characters. For broader CJK support including
+        Japanese kana and Korean hangul, extend the range check.
+        """
+        # Check for CJK Unified Ideographs (most Chinese characters)
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':
+                return True
+            # Also check for Hiragana and Katakana (Japanese)
+            if '\u3040' <= char <= '\u30ff':
+                return True
+            # And Hangul (Korean)
+            if '\uac00' <= char <= '\ud7af':
+                return True
+        return False
 
     @staticmethod
     def extract_comments_and_docstrings(content: str, language: str) -> list[CodeElement]:

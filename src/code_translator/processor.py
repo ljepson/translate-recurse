@@ -1,28 +1,56 @@
 """File processing logic for translating codebases."""
 
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .parser import CodeParser, CodeElement, ElementType
-from .translator import LocalTranslator, TranslationConfig
+from .translator import LocalTranslator
 
 
 @dataclass
 class ProcessingStats:
-    """Statistics from processing."""
+    """Thread-safe statistics from processing."""
     files_scanned: int = 0
     files_with_foreign_text: int = 0
     files_translated: int = 0
     elements_translated: int = 0
     files_skipped: int = 0
-    errors: list[str] = None
+    errors: list[str] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def __post_init__(self):
-        if self.errors is None:
-            self.errors = []
+    def increment_scanned(self):
+        """Thread-safe increment of scanned files."""
+        with self._lock:
+            self.files_scanned += 1
+
+    def increment_with_foreign_text(self):
+        """Thread-safe increment of files with foreign text."""
+        with self._lock:
+            self.files_with_foreign_text += 1
+
+    def increment_translated(self):
+        """Thread-safe increment of translated files."""
+        with self._lock:
+            self.files_translated += 1
+
+    def increment_elements_translated(self, count: int = 1):
+        """Thread-safe increment of translated elements."""
+        with self._lock:
+            self.elements_translated += count
+
+    def increment_skipped(self):
+        """Thread-safe increment of skipped files."""
+        with self._lock:
+            self.files_skipped += 1
+
+    def add_error(self, error: str):
+        """Thread-safe error logging."""
+        with self._lock:
+            self.errors.append(error)
 
 
 class FileProcessor:
@@ -84,26 +112,26 @@ class FileProcessor:
         Returns:
             Dictionary with processing results, or None if skipped
         """
-        self.stats.files_scanned += 1
+        self.stats.increment_scanned()
 
         # Check if should skip
         should_skip, reason = self.should_skip_file(file_path)
         if should_skip:
-            self.stats.files_skipped += 1
+            self.stats.increment_skipped()
             return None
 
         try:
             # Read file
             content = file_path.read_text(encoding='utf-8')
         except (UnicodeDecodeError, OSError) as e:
-            self.stats.files_skipped += 1
-            self.stats.errors.append(f"{file_path}: {e}")
+            self.stats.increment_skipped()
+            self.stats.add_error(f"{file_path}: {e}")
             return None
 
         # Detect language
         language = CodeParser.detect_language(file_path)
         if not language:
-            self.stats.files_skipped += 1
+            self.stats.increment_skipped()
             return None
 
         # Extract translatable elements
@@ -115,7 +143,7 @@ class FileProcessor:
         if not elements:
             return None
 
-        self.stats.files_with_foreign_text += 1
+        self.stats.increment_with_foreign_text()
 
         # Translate elements
         translated_elements = []
@@ -123,7 +151,8 @@ class FileProcessor:
             context = element.type.value
             translated_text = self.translator.translate(element.text, context)
             translated_elements.append((element, translated_text))
-            self.stats.elements_translated += 1
+
+        self.stats.increment_elements_translated(len(translated_elements))
 
         # Reconstruct file
         new_content = self._reconstruct_file(content, translated_elements)
@@ -132,9 +161,9 @@ class FileProcessor:
         if not self.dry_run:
             try:
                 file_path.write_text(new_content, encoding='utf-8')
-                self.stats.files_translated += 1
+                self.stats.increment_translated()
             except OSError as e:
-                self.stats.errors.append(f"{file_path}: Failed to write - {e}")
+                self.stats.add_error(f"{file_path}: Failed to write - {e}")
                 return None
 
         return {
@@ -150,9 +179,7 @@ class FileProcessor:
         translated_elements: list[tuple[CodeElement, str]]
     ) -> str:
         """
-        Reconstruct file with translated elements.
-
-        This is a simple replacement strategy - we replace text by position.
+        Reconstruct file with translated elements using position-aware replacement.
         """
         lines = original_content.split('\n')
 
@@ -161,51 +188,84 @@ class FileProcessor:
 
         for element, translation in sorted_elements:
             if element.type == ElementType.COMMENT:
-                # Replace comment text
+                # Position-aware comment replacement using start_col
                 line_idx = element.start_line
                 if line_idx < len(lines):
                     line = lines[line_idx]
-                    # Find comment marker and replace after it
-                    if '#' in line:  # Python
-                        prefix = line[:line.find('#') + 1]
-                        lines[line_idx] = f"{prefix} {translation}"
-                    elif '//' in line:  # C-style
-                        prefix = line[:line.find('//') + 2]
-                        lines[line_idx] = f"{prefix} {translation}"
+                    # Use the element's start_col to find the actual comment marker
+                    # This handles cases where the comment text itself contains # or //
+                    comment_start = element.start_col
+
+                    # Find the comment marker (# or //) at or near start_col
+                    if comment_start < len(line):
+                        if line[comment_start:comment_start+2] == '//':
+                            prefix = line[:comment_start + 2]
+                            lines[line_idx] = f"{prefix} {translation}"
+                        elif line[comment_start] == '#':
+                            prefix = line[:comment_start + 1]
+                            lines[line_idx] = f"{prefix} {translation}"
+                        else:
+                            # Fallback: try to find marker near start_col
+                            if '#' in line[max(0, comment_start-2):comment_start+3]:
+                                idx = line.rfind('#', 0, comment_start+3)
+                                prefix = line[:idx + 1]
+                                lines[line_idx] = f"{prefix} {translation}"
+                            elif '//' in line[max(0, comment_start-2):comment_start+4]:
+                                idx = line.rfind('//', 0, comment_start+4)
+                                prefix = line[:idx + 2]
+                                lines[line_idx] = f"{prefix} {translation}"
 
             elif element.type == ElementType.DOCSTRING:
-                # Replace docstring content
-                # This is simplified - just replace the text between the markers
+                # Preserve original docstring delimiters and indentation
                 start_line = element.start_line
                 end_line = element.end_line
 
                 if start_line < len(lines):
-                    # Handle multi-line docstrings
+                    original_start_line = lines[start_line]
+
+                    # Detect quote style and indentation
+                    quote_style = '"""'
+                    if "'''" in original_start_line:
+                        quote_style = "'''"
+                    elif '"""' in original_start_line:
+                        quote_style = '"""'
+
+                    # Detect indentation from original line
+                    indent = len(original_start_line) - len(original_start_line.lstrip())
+                    indent_str = original_start_line[:indent]
+
                     if start_line == end_line:
-                        # Single line docstring
-                        line = lines[start_line]
-                        if '"""' in line:
-                            lines[start_line] = f'    """{translation}"""'
-                        elif "'''" in line:
-                            lines[start_line] = f"    '''{translation}'''"
+                        # Single line docstring - preserve style and indentation
+                        lines[start_line] = f'{indent_str}{quote_style}{translation}{quote_style}'
                     else:
-                        # Multi-line - replace middle content
-                        # Keep first and last lines (with quotes), replace middle
+                        # Multi-line docstring - preserve quote style and indentation
                         translated_lines = translation.split('\n')
+
+                        # Extract prefix before opening quotes
+                        prefix = original_start_line[:original_start_line.find(quote_style)]
+
                         lines[start_line:end_line+1] = [
-                            lines[start_line].split('"""')[0] + '"""',
-                            *[f"    {line}" for line in translated_lines],
-                            '    """'
+                            f'{prefix}{quote_style}',
+                            *[f'{indent_str}{line}' if line.strip() else '' for line in translated_lines],
+                            f'{indent_str}{quote_style}'
                         ]
 
             elif element.type == ElementType.STRING_LITERAL:
-                # Replace string literal
+                # Position-aware string replacement using start_col and end_col
                 line_idx = element.start_line
                 if line_idx < len(lines):
                     line = lines[line_idx]
-                    # Simple replacement - find the string and replace it
-                    # This is naive and might break for complex cases
-                    lines[line_idx] = line.replace(element.text, translation)
+                    # Only replace at the specific position, not all occurrences
+                    if hasattr(element, 'start_col') and hasattr(element, 'end_col'):
+                        # Slice and reconstruct to replace only the specific occurrence
+                        before = line[:element.start_col]
+                        after = line[element.end_col:]
+                        # Preserve the quote character
+                        quote_char = line[element.start_col] if element.start_col < len(line) else '"'
+                        lines[line_idx] = f'{before}{quote_char}{translation}{quote_char}{after}'
+                    else:
+                        # Fallback: replace only first occurrence
+                        lines[line_idx] = line.replace(element.text, translation, 1)
 
         return '\n'.join(lines)
 
