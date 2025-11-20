@@ -35,11 +35,9 @@ class CodeParser:
         'python': {
             'line_comment': re.compile(r'#(.*)$', re.MULTILINE),
             'docstring': re.compile(r'"""(.*?)"""|\'\'\'(.*?)\'\'\'', re.DOTALL),
-            # Exclude triple-quoted strings using negative lookbehind and lookahead
-            'string': re.compile(
-                r'(?<!")"([^"\\\n]|\\.)*"(?<!")'
-                r"|(?<!\')'([^'\\\n]|\\.)*'(?<!\')"
-            ),
+            # Match single and double quoted strings (excluding newlines)
+            # Triple-quoted strings are handled by docstring pattern above
+            'string': re.compile(r'"([^"\\\n]|\\.)*"|\'([^\'\\\n]|\\.)*\''),
         },
         'javascript': {
             'line_comment': re.compile(r'//(.*)$', re.MULTILINE),
@@ -178,22 +176,40 @@ class CodeParser:
         # Start with comments and docstrings
         elements = CodeParser.extract_comments_and_docstrings(content, language)
 
-        # Add string literals
+        # Build set of positions already covered by docstrings/comments to avoid duplicates
+        covered_ranges = set()
+        for elem in elements:
+            # Mark character positions as covered
+            start_pos = sum(len(line) + 1 for i, line in enumerate(content.split('\n')[:elem.start_line]))
+            end_pos = sum(len(line) + 1 for i, line in enumerate(content.split('\n')[:elem.end_line + 1]))
+            covered_ranges.add((start_pos, end_pos))
+
+        # Add string literals (excluding those already matched as docstrings)
         patterns = CodeParser.PATTERNS.get(language, {})
         if 'string' in patterns:
             for match in patterns['string'].finditer(content):
-                string_text = match.group(0)[1:-1]  # Remove quotes
-                if CodeParser.contains_non_ascii(string_text):
-                    line_num = content[:match.start()].count('\n')
-                    lines = content.split('\n')
-                    elements.append(CodeElement(
-                        type=ElementType.STRING_LITERAL,
-                        text=string_text,
-                        start_line=line_num,
-                        end_line=line_num,
-                        start_col=match.start() - content.rfind('\n', 0, match.start()) - 1,
-                        end_col=match.end() - content.rfind('\n', 0, match.end()) - 1,
-                        original_text=lines[line_num] if line_num < len(lines) else ""
-                    ))
+                # Check if this match overlaps with any covered range
+                match_start = match.start()
+                match_end = match.end()
+
+                is_covered = any(
+                    match_start >= start and match_end <= end
+                    for start, end in covered_ranges
+                )
+
+                if not is_covered:
+                    string_text = match.group(0)[1:-1]  # Remove quotes
+                    if CodeParser.contains_non_ascii(string_text):
+                        line_num = content[:match.start()].count('\n')
+                        lines = content.split('\n')
+                        elements.append(CodeElement(
+                            type=ElementType.STRING_LITERAL,
+                            text=string_text,
+                            start_line=line_num,
+                            end_line=line_num,
+                            start_col=match.start() - content.rfind('\n', 0, match.start()) - 1,
+                            end_col=match.end() - content.rfind('\n', 0, match.end()) - 1,
+                            original_text=lines[line_num] if line_num < len(lines) else ""
+                        ))
 
         return elements

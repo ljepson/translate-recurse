@@ -151,14 +151,25 @@ class FileProcessor:
 
         self.stats.increment_with_foreign_text()
 
-        # Translate elements
+        # Translate elements with error tracking
         translated_elements = []
+        translation_failures = 0
+
         for element in elements:
             context = element.type.value
-            translated_text = self.translator.translate(element.text, context)
-            translated_elements.append((element, translated_text))
+            result = self.translator.translate_with_result(element.text, context)
 
-        self.stats.increment_elements_translated(len(translated_elements))
+            if result.success:
+                translated_elements.append((element, result.text))
+            else:
+                # Translation failed - use original text and log error
+                translated_elements.append((element, element.text))
+                translation_failures += 1
+                self.stats.add_error(
+                    f"{file_path} [{element.type.value} at line {element.start_line}]: {result.error}"
+                )
+
+        self.stats.increment_elements_translated(len(translated_elements) - translation_failures)
 
         # Reconstruct file
         new_content = self._reconstruct_file(content, translated_elements)
