@@ -1,0 +1,67 @@
+# Example configuration file for code-translator
+# Copy this to .code-translator.toml and customize
+
+[translation]
+# Ollama model to use for translation
+# Recommended models for Chinese: qwen2.5:1.5b, aya:1.3b
+model = "qwen2.5:1.5b"
+
+# Source and target languages
+source_lang = "Chinese"
+target_lang = "English"
+
+# Temperature for translation (0.0 = deterministic, 1.0 = creative)
+# Lower values give more consistent translations
+temperature = 0.3
+
+[processing]
+# Translate everything including string literals (risky!)
+translate_all = false
+
+# Number of parallel workers for processing files
+max_workers = 4
+
+# Recursively process subdirectories
+recursive = true
+
+[filters]
+# Directories to skip
+skip_dirs = [
+    ".git",
+    ".svn",
+    ".hg",
+    "__pycache__",
+    "node_modules",
+    "venv",
+    ".venv",
+    "dist",
+    "build",
+    "target",
+    ".pytest_cache",
+    ".mypy_cache",
+]
+
+# File extensions to skip
+skip_extensions = [
+    # Compiled files
+    ".pyc", ".pyo", ".so", ".dll", ".exe", ".bin", ".obj",
+    # Images
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico", ".svg",
+    # Media
+    ".mp3", ".mp4", ".avi", ".mov", ".wav",
+    # Archives
+    ".zip", ".tar", ".gz", ".rar", ".7z",
+    # Documents
+    ".pdf", ".doc", ".docx",
+]
+
+# Optional: specific file patterns to include (glob patterns)
+# If not specified, all supported files are processed
+# file_patterns = ["*.py", "*.js"]
+
+[git]
+# Automatically create a new branch before translating
+auto_create_branch = false
+
+# Prefix for auto-created branches
+branch_prefix = "translation/"

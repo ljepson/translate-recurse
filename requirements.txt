@@ -1,1 +1,22 @@
-googletrans>=4.0.0
+# Core dependencies
+click>=8.1.0
+ollama>=0.1.0
+rich>=13.0.0
+
+# Tree-sitter for syntax parsing
+tree-sitter>=0.21.0
+tree-sitter-python>=0.21.0
+tree-sitter-javascript>=0.21.0
+tree-sitter-java>=0.21.0
+tree-sitter-go>=0.21.0
+tree-sitter-rust>=0.21.0
+
+# For Python < 3.11 compatibility (though we require 3.11+)
+tomli>=2.0.0; python_version < '3.11'
+
+# Development dependencies (optional)
+# Uncomment for development:
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# black>=23.0.0
+# ruff>=0.1.0
