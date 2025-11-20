@@ -120,6 +120,12 @@ class FileProcessor:
             self.stats.increment_skipped()
             return None
 
+        # Check file size before reading
+        max_size_bytes = 1 * 1024 * 1024  # 1MB
+        if file_path.stat().st_size > max_size_bytes:
+            self.stats.files_skipped += 1
+            self.stats.errors.append(f"{file_path}: File too large to process (>1MB)")
+            return None
         try:
             # Read file
             content = file_path.read_text(encoding='utf-8')
