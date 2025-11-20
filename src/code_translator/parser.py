@@ -35,7 +35,11 @@ class CodeParser:
         'python': {
             'line_comment': re.compile(r'#(.*)$', re.MULTILINE),
             'docstring': re.compile(r'"""(.*?)"""|\'\'\'(.*?)\'\'\'', re.DOTALL),
-            'string': re.compile(r'"([^"\\]|\\.)*"|\'([^\'\\]|\\.)*\''),
+            # Exclude triple-quoted strings using negative lookbehind and lookahead
+            'string': re.compile(
+                r'(?<!")"([^"\\\n]|\\.)*"(?<!")'
+                r"|(?<!\')'([^'\\\n]|\\.)*'(?<!\')"
+            ),
         },
         'javascript': {
             'line_comment': re.compile(r'//(.*)$', re.MULTILINE),
